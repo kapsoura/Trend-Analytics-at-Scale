@@ -1,0 +1,185 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"
+      - "9001:9000"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      - ../Dataset/ReviewData:/data/ReviewData
+      - ../models:/models
+      - ../src:/src
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    env_file:
+      - ./hadoop.env
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - namenode
+    env_file:
+      - ./hadoop.env
+
+  spark-master:
+    image: jupyter/pyspark-notebook:spark-3.3.0
+    hostname: spark-master
+    container_name: spark-master
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - GRANT_SUDO=yes
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+      - "8501:8501"
+    volumes:
+      - ../src:/home/jovyan/src
+      - ../models:/home/jovyan/models
+      - ../Dataset/ReviewData:/home/jovyan/data/ReviewData
+    depends_on:
+      - namenode
+    command: >
+      bash -c "
+        /usr/local/spark/sbin/start-master.sh &&
+        tail -f /usr/local/spark/logs/*
+      "
+
+  spark-worker-1:
+    image: jupyter/pyspark-notebook:spark-3.3.0
+    hostname: spark-worker-1
+    container_name: spark-worker-1
+    user: root
+    depends_on:
+      - spark-master
+      - namenode
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - GRANT_SUDO=yes
+    ports:
+      - "8081:8081"
+    volumes:
+      - ../src:/home/jovyan/src
+      - ../models:/home/jovyan/models
+      - ../Dataset/ReviewData:/home/jovyan/data/ReviewData
+    command: >
+      bash -c "
+        /usr/local/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /usr/local/spark/logs/*
+      "
+
+  spark-worker-2:
+    image: jupyter/pyspark-notebook:spark-3.3.0
+    hostname: spark-worker-2
+    container_name: spark-worker-2
+    user: root
+    depends_on:
+      - spark-master
+      - namenode
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - GRANT_SUDO=yes
+    ports:
+      - "8082:8081"
+    volumes:
+      - ../src:/home/jovyan/src
+      - ../models:/home/jovyan/models
+      - ../Dataset/ReviewData:/home/jovyan/data/ReviewData
+    command: >
+      bash -c "
+        /usr/local/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /usr/local/spark/logs/*
+      "
+
+  spark-worker-3:
+    image: jupyter/pyspark-notebook:spark-3.3.0
+    hostname: spark-worker-3
+    container_name: spark-worker-3
+    user: root
+    depends_on:
+      - spark-master
+      - namenode
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - GRANT_SUDO=yes
+    ports:
+      - "8083:8081"
+    volumes:
+      - ../src:/home/jovyan/src
+      - ../models:/home/jovyan/models
+      - ../Dataset/ReviewData:/home/jovyan/data/ReviewData
+    command: >
+      bash -c "
+        /usr/local/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /usr/local/spark/logs/*
+      "
+
+  kafka:    
+    image: apache/kafka:latest
+    container_name: broker
+    hostname: broker
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    ports:
+      - "9092:9092"
+  
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: ""
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  mongodb_data:
+
+networks:
+  default:
+    driver: bridge
